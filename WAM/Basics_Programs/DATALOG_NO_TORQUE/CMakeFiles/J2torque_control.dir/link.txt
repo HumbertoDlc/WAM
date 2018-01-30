@@ -1,0 +1,1 @@
+/usr/bin/c++   -O2 -g -DNDEBUG    CMakeFiles/J2torque_control.dir/J2torque_control.cpp.o  -o J2torque_control  -L/usr/local/lib -rdynamic -lboost_system -lboost_thread -lboost_python -lpthread -L/usr/lib -lgsl -lgslcblas -lm -lconfig -lconfig++ -lnative -lxenomai -lrtdm -lpython2.7 -lbarrett -Wl,-rpath,/usr/local/lib 

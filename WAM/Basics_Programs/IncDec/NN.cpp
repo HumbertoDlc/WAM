@@ -1,0 +1,63 @@
+// Lock joints together
+#include <iostream>
+#include <string>
+#include <cstdlib>  // For std::atexit()
+#include <algorithm>
+
+#include <barrett/systems.h>
+#include <barrett/products/product_manager.h>
+#include <barrett/standard_main_function.h>
+
+using namespace barrett;
+
+void waitForEnter() 
+{
+	std::string line;
+	std::getline(std::cin, line);
+}
+
+template<size_t DOF>
+int wam_main(int argc, char** argv, ProductManager& pm, systems::Wam<DOF>& wam) 
+{
+	BARRETT_UNITS_TEMPLATE_TYPEDEFS(DOF);
+	jp_type zeroMove;
+
+	std::cout << "Press [Enter].\n";
+	waitForEnter();
+	wam.gravityCompensate(true);
+	
+	bool going = true;
+	int val;
+	float pos=0.0;
+	wam.moveTo(jp_type(pos));
+
+	cp_type pos_arr;
+
+	while (going)
+	{
+		std::cout <<pos<<">>> ";
+		std::cin >> val;
+		switch (val) {
+		case 5:
+			going = false;
+			break;
+		case 8:
+			pos=pos+0.1;
+			wam.moveTo(jp_type(pos));
+			break;
+		case 2:
+			pos=pos-0.1;
+			wam.moveTo(jp_type(pos));
+			break;
+		case 4:
+			pos_arr[0]=0.1;
+			pos_arr[1]=0.2;
+			pos_arr[2]=0;
+			wam.moveTo(pos_arr);
+			break;
+					}
+	}
+	wam.moveHome();
+	pm.getSafetyModule()->waitForMode(SafetyModule::IDLE);
+	return 0;
+}

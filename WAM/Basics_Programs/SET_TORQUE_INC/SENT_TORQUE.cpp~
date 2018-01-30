@@ -1,0 +1,237 @@
+#include <iostream>
+#include <string>
+#include <cstdlib>  // For std::atexit()
+
+// The ncurses library allows us to write text to any location on the screen
+#include <curses.h>
+
+#include <barrett/units.h>
+#include <barrett/systems.h>
+#include <barrett/products/product_manager.h>
+#include <barrett/detail/stl_utils.h>
+#include <barrett/os.h>  // For btsleep()
+#include <barrett/math.h>  // For barrett::math::saturate()
+#include <barrett/standard_main_function.h>
+
+
+
+
+using namespace barrett;
+using detail::waitForEnter;
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+template<size_t DOF>
+class JVal : public systems::System
+{
+	BARRETT_UNITS_TEMPLATE_TYPEDEFS(DOF);
+
+public:
+	JVal(double centerAngle, 
+		double springConstant,// = 20.0, 
+		const std::string& sysName = "JSpring") :
+		System(sysName),
+		jp_in(this),
+		jv_in(this),
+		jt_out(this, &jtOutputValue),
+		center(centerAngle), 
+		gain(springConstant),
+		jt(0.0) {}
+	Input<jp_type> jp_in;
+	Input<jv_type> jv_in;
+	Output<jt_type> jt_out;
+	virtual ~JSpring() { this->mandatoryCleanUp(); }
+
+protected:
+	static const size_t J_IDX = 0;
+
+	typename Output<jt_type>::Value* jtOutputValue;
+	double center, gain;
+	jt_type jt;
+	double theta;
+
+	virtual void operate() {
+		theta = jp_in.getValue()[J_IDX];
+		//if (theta < center) {
+		//	jt[J_IDX] = 0.0;
+		//} else {
+		//	jt[J_IDX] = (center - theta) * gain;
+		//}
+		jt[J_IDX] = (center - theta) * gain;
+		this->jtOutputValue->setData(&jt);
+	}
+
+private:
+	DISALLOW_COPY_AND_ASSIGN(JSpring);
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+template<size_t DOF>
+class JSpring : public systems::System
+{
+	BARRETT_UNITS_TEMPLATE_TYPEDEFS(DOF);
+
+public:
+	JSpring(double centerAngle, 
+		double springConstant,// = 20.0, 
+		const std::string& sysName = "JSpring") :
+		System(sysName),
+		jp_in(this),
+		jv_in(this),
+		jt_out(this, &jtOutputValue),
+		center(centerAngle), 
+		gain(springConstant),
+		jt(0.0) {}
+	Input<jp_type> jp_in;
+	Input<jv_type> jv_in;
+	Output<jt_type> jt_out;
+	virtual ~JSpring() { this->mandatoryCleanUp(); }
+
+protected:
+	static const size_t J_IDX = 0;
+
+	typename Output<jt_type>::Value* jtOutputValue;
+	double center, gain;
+	jt_type jt;
+	double theta;
+
+	virtual void operate() {
+		theta = jp_in.getValue()[J_IDX];
+		//if (theta < center) {
+		//	jt[J_IDX] = 0.0;
+		//} else {
+		//	jt[J_IDX] = (center - theta) * gain;
+		//}
+		jt[J_IDX] = (center - theta) * gain;
+		this->jtOutputValue->setData(&jt);
+	}
+
+private:
+	DISALLOW_COPY_AND_ASSIGN(JSpring);
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+template<size_t DOF>
+class JDamper : public systems::System
+{
+	BARRETT_UNITS_TEMPLATE_TYPEDEFS(DOF);
+
+public:
+	Input<jp_type> jp_in;
+	Input<jv_type> jv_in;
+	Output<jt_type> jt_out;
+	JDamper(double dampingConstant, 
+		const std::string& sysName = "JDamper") :
+		System(sysName), 
+		jp_in(this),
+		jv_in(this),
+		jt_out(this, &jtOutputValue),
+		gain(dampingConstant), 
+		jt(0.0) {}
+	virtual ~JDamper() { this->mandatoryCleanUp(); }
+
+protected:
+	static const size_t J_IDX = 0;
+
+	typename Output<jt_type>::Value* jtOutputValue;
+	double gain;
+	jt_type jt;
+	double thetaD; // ThetaDot
+
+	virtual void operate() {
+		thetaD = jv_in.getValue()[J_IDX];
+		jt[J_IDX] = - thetaD * gain;
+
+		this->jtOutputValue->setData(&jt);
+	}
+
+private:
+	DISALLOW_COPY_AND_ASSIGN(JDamper);
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+template<size_t DOF>
+class JSpringDamper : public systems::System
+{
+	BARRETT_UNITS_TEMPLATE_TYPEDEFS(DOF);
+
+public:
+	Input<jp_type> jp_in;
+	Input<jv_type> jv_in;
+	Output<jt_type> jt_out;
+	JSpringDamper(jp_type centerAngle,
+		double *springConstant,
+		double *dampingConstant, 
+		const std::string& sysName = "JSpringDamper") :
+		System(sysName), 
+		jp_in(this),
+		jv_in(this),
+		jt_out(this, &jtOutputValue),
+		center(centerAngle),
+		stiffness(springConstant),
+		damping(dampingConstant), 
+		jt(0.0) {}
+	virtual ~JSpringDamper() { this->mandatoryCleanUp(); }
+
+protected:
+	//static const size_t J_IDX = 0;
+
+	typename Output<jt_type>::Value* jtOutputValue;
+	jp_type center;
+	double *stiffness, *damping;
+	jt_type jt;
+	jp_type theta;
+	jv_type thetaD; // Theta and ThetaDot
+
+	virtual void operate() 
+	{
+		theta = jp_in.getValue();
+		thetaD = jv_in.getValue();
+		for (int i = 0; i < 4; i++)
+		{
+			jt[i] = (center[i] - theta[i]) * (*(stiffness+i)) - thetaD[i] * (*(damping+i));
+		}
+
+		this->jtOutputValue->setData(&jt);
+	}
+
+private:
+	DISALLOW_COPY_AND_ASSIGN(JSpringDamper);
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+template<size_t DOF>
+int wam_main(int argc, char** argv, ProductManager& pm, systems::Wam<DOF>& wam) 
+{
+	BARRETT_UNITS_TEMPLATE_TYPEDEFS(DOF);
+
+	wam.moveHome();
+	printf("Press [Enter] to go to zero.");
+	waitForEnter();
+	wam.gravityCompensate();
+	wam.moveTo(jp_type(0.0));
+
+	printf("Press [Enter] to add a virtual spring-damper to all joints.");
+	waitForEnter();
+
+	//JSpring<DOF> js(wam.getJointPositions()[0],50);
+	//systems::connect(wam.jpOutput, js.jp_in);
+	//systems::connect(wam.jvOutput, js.jv_in);
+	//JDamper<DOF> jd(10);
+	//systems::connect(wam.jpOutput, jd.jp_in);
+	//systems::connect(wam.jvOutput, jd.jv_in);
+	
+	double stiffness[] = {4, 4, 4, 4};
+	double damping[] = {.5, .5, .5, .5};
+	JSpringDamper<DOF> jsd(wam.getJointPositions(),stiffness,damping);
+	//systems::connect(wam.jpOutput, jsd.jp_in);
+	//systems::connect(wam.jvOutput, jsd.jv_in);
+
+	//wam.trackReferenceSignal(jsd.jt_out);
+
+	
+	// Wait for the user to press Shift-idle
+	pm.getSafetyModule()->waitForMode(SafetyModule::IDLE);
+	std::cout << DOF << "is DOF" << std::endl;
+	return 0;
+}
+

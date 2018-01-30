@@ -1,0 +1,82 @@
+// Lock joints together
+#include <iostream>
+#include <string>
+#include <cstdlib>  // For std::atexit()
+#include <algorithm>
+
+#include <barrett/systems.h>
+#include <barrett/products/product_manager.h>
+#include <barrett/standard_main_function.h>
+
+using namespace barrett;
+
+void waitForEnter() 
+{
+	std::string line;
+	std::getline(std::cin, line);
+}
+
+template<size_t DOF>
+class LockJoints : public systems::SingleIO<typename units::JointPositions<DOF>::type,
+		 typename units::JointPositions<DOF>::type>
+{
+	BARRETT_UNITS_TEMPLATE_TYPEDEFS(DOF);
+public:
+	//Input<jp_type> jp_in;
+	//Output<jp_type> jp_out;
+	
+protected:
+	virtual void operate()
+	{
+		jp = this->input.getValue();//jp_in.getValue();
+		std::swap(jp[0], jp[2]);
+		std::swap(jp[1], jp[3]);
+		this->outputValue->setData(&jp);//jp_out
+
+	}
+private:
+	jp_type jp;
+};
+
+
+template<size_t DOF>
+int wam_main(int argc, char** argv, ProductManager& pm, systems::Wam<DOF>& wam) 
+{
+	BARRETT_UNITS_TEMPLATE_TYPEDEFS(DOF);
+	jp_type zeroMove;
+
+	LockJoints<DOF> locksys;
+	systems::connect(wam.jpOutput, locksys.input);
+
+	std::cout << "Press [Enter].\n";
+	waitForEnter();
+	wam.gravityCompensate(true);
+	
+	bool locked = false;
+	bool going = true;
+	std::string line;
+
+	while (going)
+	{
+		std::cout << ">>> ";
+		std::getline(std::cin, line);
+		switch (line[0]) {
+		case 'x':
+			going = false;
+			//wam.moveTo(jp_type(0.0));
+			wam.moveHome();
+			break;
+		case 'l':
+			locked = !locked;
+			if (locked){
+				wam.moveTo(jp_type(0.0));
+				wam.trackReferenceSignal(locksys.output); 
+			} else {
+				wam.idle();
+			}
+			break;
+		}
+	}
+	pm.getSafetyModule()->waitForMode(SafetyModule::IDLE);
+	return 0;
+}

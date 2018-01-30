@@ -1,0 +1,140 @@
+// C++
+#include <cstdio>  // For remove()
+#include <fstream>
+#include <math.h>  
+#include <iostream>
+#include <string>
+#include <cstdlib>  // For std::atexit()
+#include <algorithm>
+// BARRETT
+#include <boost/tuple/tuple.hpp>
+#include <barrett/log.h>
+#include <barrett/units.h>
+#include <curses.h>
+#include <barrett/detail/stl_utils.h>
+#include <barrett/os.h>
+#include <barrett/math.h>
+#include <barrett/systems.h>
+#include <barrett/products/product_manager.h>
+#include <barrett/standard_main_function.h>
+// LABJACK
+#include <stdio.h>
+#include <unistd.h>
+#include <stdlib.h>
+#include <sys/time.h>
+#include "ljacklm.h"
+
+using namespace barrett;
+using namespace std;
+void waitForEnter() 
+{
+	std::string line;
+	std::getline(std::cin, line);
+}
+
+int mainLJ (double ENC_1, double ENC_2, double ENC_3, double ENC_4)
+{
+/////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////LABJACK/////////////////////////////////////////////////////
+	long idnum12 = 0;
+	long idnum34 = 1;
+	long demo = 0;  //Normal operations
+	long stateIO = 0;  //Output states for IO0-IO3
+
+	//AOUpdate specific paramters
+	long trisD = 0;  //Directions for D0-D15
+	long trisIO = 0;  //Directions for IO0-IO3
+	long stateD = 0;  //Output states for D0-D15
+	long updateDigital = 0;  //Tris and state values are only being read
+	long resetCounter = 0;  //Not resetting counter
+	unsigned long count = 0;  //Returned current count value
+	float analogOut0 = 0;  //Voltage for AO0 DEVICE 1
+	float analogOut1 = 0;  //Voltage for AO1 DEVICE 1
+	float analogOut2 = 0;  //Voltage for AO0 DEVICE 2
+	float analogOut3 = 0;  //Voltage for AO1 DEVICE 2
+
+/////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////LABJACK/////////////////////////////////////////////////////
+analogOut0=1;
+analogOut1=2;
+analogOut2=3;
+analogOut3=4;
+	
+	if (analogOut0>=5)
+	{analogOut0=5;}
+	if (analogOut0<=0)
+	{analogOut0=0;}
+	if (analogOut1>=5)
+	{analogOut1=5;}
+	if (analogOut1<=0)
+	{analogOut1=0;}
+	if (analogOut2>=5)
+	{analogOut2=5;}
+	if (analogOut2<=0)
+	{analogOut2=0;}
+	if (analogOut3>=5)
+	{analogOut3=5;}
+	if (analogOut3<=0)
+	{analogOut3=0;}
+	
+	AOUpdate(&idnum12, demo, trisD, trisIO, &stateD,
+					&stateIO, updateDigital, resetCounter, &count, analogOut0,
+					analogOut1);
+	AOUpdate(&idnum34, demo, trisD, trisIO, &stateD,
+					&stateIO, updateDigital, resetCounter, &count, analogOut2,
+					analogOut3);
+
+return 0;
+}
+
+
+
+template<size_t DOF>
+int wam_main(int argc, char** argv, ProductManager& pm, systems::Wam<DOF>& wam) 
+{
+	BARRETT_UNITS_TEMPLATE_TYPEDEFS(DOF);
+	jp_type zeroMove;
+
+	
+	wam.gravityCompensate(true);
+	
+	bool going = true;
+	//int n;
+	//int val;
+	//wam.moveTo(jp_type(0.0));
+
+	jp_type J_arr;
+	
+	std::cout << "Entering to the loop.\n";
+	//waitForEnter();
+
+	long idnum0 = 0;
+	long idnum1 = 1;
+	long overVoltage = 0;  //Returns >0 if overvoltage is detected
+	float Fx = 0.0;  //Returns the voltage reading
+	float Fy = 0.0;  //Returns the voltage reading
+	float Fz = 0.0;  //Returns the voltage reading
+	float Tx = 0.0;  //Returns the voltage reading
+	float Ty = 0.0;  //Returns the voltage reading
+	float Tz = 0.0;  //Returns the voltage reading
+	
+	while (going)
+	{
+		J_arr=wam.getJointPositions();
+		mainLJ(J_arr[0],J_arr[1],J_arr[2],J_arr[3]);
+		
+		EAnalogIn(&idnum0, 0, 0, 0, &overVoltage, &Fx);
+		EAnalogIn(&idnum0, 0, 2, 0, &overVoltage, &Fy);
+		EAnalogIn(&idnum0, 0, 4, 0, &overVoltage, &Fz);
+		EAnalogIn(&idnum1, 0, 0, 0, &overVoltage, &Tx);
+		EAnalogIn(&idnum1, 0, 2, 0, &overVoltage, &Ty);
+		EAnalogIn(&idnum1, 0, 4, 0, &overVoltage, &Tz);
+		std::cout<<"Fx: "<<Fx<<"\n\n\n\nFy: "<<Fy<<"\n\n\n\nFz: "<<Fz<<"\n\n\n\nTx: "<<Tx<<"\n\n\n\nTy: "<<Ty<<"\n\n\n\nTz: "<<Tz<<"\n\n\n\n";
+		//for(n = 0; n < 10; n++){std::cout<<"\n";}
+		
+		
+	}
+	wam.moveHome();
+	pm.getSafetyModule()->waitForMode(SafetyModule::IDLE);
+	return 0;
+}

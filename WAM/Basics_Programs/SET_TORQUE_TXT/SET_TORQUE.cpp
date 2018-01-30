@@ -1,0 +1,109 @@
+#include <iostream>
+#include <string>
+#include <cstdlib>  // For std::atexit()
+
+#include <cstdio>  // For remove()
+#include <string>
+#include <fstream>
+#include <algorithm>
+#include <stdio.h>
+#include <stdlib.h>
+
+// The ncurses library allows us to write text to any location on the screen
+#include <curses.h>
+
+#include <barrett/units.h>
+#include <barrett/systems.h>
+#include <barrett/products/product_manager.h>
+#include <barrett/detail/stl_utils.h>
+#include <barrett/os.h>  // For btsleep()
+#include <barrett/math.h>  // For barrett::math::saturate()
+#include <barrett/standard_main_function.h>
+
+#include<ctime>
+#include <time.h>
+
+
+
+using namespace barrett;
+using namespace std;
+using detail::waitForEnter;
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+template<size_t DOF>
+class Set_Torque : public systems::System
+{
+	BARRETT_UNITS_TEMPLATE_TYPEDEFS(DOF);
+
+public:
+	Input<jp_type> jp_in;
+	Input<jv_type> jv_in;
+	Output<jt_type> jt_out;
+	Set_Torque(double *Torques, 
+		const std::string& sysName = "Set_Torque") :
+		System(sysName), 
+		jp_in(this),
+		jv_in(this),
+		jt_out(this, &jtOutputValue),
+		Tor(Torques),
+		jt(0.0) {}
+	virtual ~Set_Torque() { this->mandatoryCleanUp(); }
+
+protected:
+	typename Output<jt_type>::Value* jtOutputValue;
+	double *Tor;
+	jt_type jt;
+	virtual void operate() 
+	{
+		jt[0]=Tor[0];
+		jt[1]=Tor[1];
+		jt[2]=Tor[2];
+		jt[3]=Tor[3];		
+		this->jtOutputValue->setData(&jt);
+	}
+
+private:
+	DISALLOW_COPY_AND_ASSIGN(Set_Torque);
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+template<size_t DOF>
+int wam_main(int argc, char** argv, ProductManager& pm, systems::Wam<DOF>& wam) 
+{
+	BARRETT_UNITS_TEMPLATE_TYPEDEFS(DOF);
+
+	wam.moveHome();
+	printf("Press [Enter] to move to the position related to the specific Torque.");
+	waitForEnter();
+	
+	wam.moveHome();
+
+	double Torques_TXT[31416][4];
+	double Torques[4];
+	ifstream file;
+	file.open("exp.txt");
+	
+	for(int i=0;i<31416;++i){
+	for(int j=0;j<4;++j){
+	file>>Torques_TXT[i][j];}}
+	file.close();
+	
+	for(int k=0;k<31416;++k){
+	{
+	cout<<Torques[0]<<" "<<Torques[1]<<" "<<Torques[2]<<" "<<Torques[3]<<"\n";
+	Torques[0]=Torques_TXT[k][0];
+	Torques[1]=Torques_TXT[k][1];
+	Torques[2]=Torques_TXT[k][2];
+	Torques[3]=Torques_TXT[k][3];
+	Set_Torque<DOF> jsd(Torques);
+	systems::connect(wam.jpOutput, jsd.jp_in);
+	systems::connect(wam.jvOutput, jsd.jv_in);
+	wam.trackReferenceSignal(jsd.jt_out);
+	}
+	}
+
+	// Wait for the user to press Shift-idle
+	pm.getSafetyModule()->waitForMode(SafetyModule::IDLE);
+	return 0;
+}
+

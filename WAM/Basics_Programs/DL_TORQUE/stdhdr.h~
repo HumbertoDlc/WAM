@@ -1,0 +1,36 @@
+#ifndef STDHDR_H_
+#define STDHDR_H_
+#include <stdlib.h>
+#include <stdio.h>
+#include <iostream>
+#include <string>
+#include <boost/ref.hpp>
+#include <boost/bind.hpp>
+#include <boost/tuple/tuple.hpp>
+#include <boost/thread.hpp>
+#include <libconfig.h++>
+#include <barrett/thread/abstract/mutex.h>
+#include <barrett/math.h>
+#include <barrett/units.h>
+#include <barrett/log.h>
+#include <barrett/systems.h>
+//#include <barrett/systems/wam.h>
+#include <barrett/wam.h>
+namespace math = barrett::math;
+namespace systems = barrett::systems;
+namespace units = barrett::units;
+using barrett::Wam;
+using systems::connect;
+using systems::reconnect;
+using systems::disconnect;
+const int DOF = 4;
+const double T_s = 0.002;
+typedef units::JointTorques<DOF>::type jt_type;
+typedef units::JointPositions<DOF>::type jp_type;
+typedef units::JointVelocities<DOF>::type jv_type;
+typedef units::CartesianPosition::type cp_type;
+inline void waitForEnter() { 
+	static std::string line;
+	std::getline(std::cin, line);
+}
+#endif /* STDHDR_H_ */

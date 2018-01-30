@@ -1,0 +1,163 @@
+#include <cstdlib>  // For mkstmp()
+#include <cstdio>  // For remove()
+#include <iostream> 
+#include <string>
+#include <fstream>
+#include <algorithm>
+
+#include <boost/tuple/tuple.hpp>
+
+#include <barrett/log.h>
+#include <barrett/units.h>
+#include <barrett/systems.h>
+#include <barrett/products/product_manager.h>
+
+#include <curses.h>
+#include <barrett/detail/stl_utils.h>
+#include <barrett/os.h>  // For btsleep()
+#include <barrett/math.h>  // For barrett::math::saturate()
+
+#define BARRETT_SMF_VALIDATE_ARGS
+#include <barrett/standard_main_function.h>
+
+#include<ctime>
+#include <time.h>
+
+using namespace barrett;
+using namespace std;
+using systems::connect;
+using detail::waitForEnter;
+
+bool validate_args(int argc, char** argv) {
+	return true;
+}
+
+void waitForEnter() 
+{
+	std::string line;
+	std::getline(std::cin, line);
+}
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+template<size_t DOF>
+class Set_Torque : public systems::System
+{
+	BARRETT_UNITS_TEMPLATE_TYPEDEFS(DOF);
+
+public:
+	Input<jp_type> jp_in;
+	Input<jv_type> jv_in;
+	Output<jt_type> jt_out;
+	Set_Torque(double *Torques, 
+		const std::string& sysName = "Set_Torque") :
+		System(sysName), 
+		jp_in(this),
+		jv_in(this),
+		jt_out(this, &jtOutputValue),
+		Tor(Torques),
+		jt(0.0) {}
+	virtual ~Set_Torque() { this->mandatoryCleanUp(); }
+
+protected:
+	typename Output<jt_type>::Value* jtOutputValue;
+	double *Tor;
+	jt_type jt;
+	virtual void operate() 
+	{
+		jt[0]=Tor[0];
+		jt[1]=Tor[1];
+		jt[2]=Tor[2];
+		jt[3]=Tor[3];		
+		this->jtOutputValue->setData(&jt);
+	}
+
+private:
+	DISALLOW_COPY_AND_ASSIGN(Set_Torque);
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template<size_t DOF>
+int wam_main(int argc, char** argv, ProductManager& pm, systems::Wam<DOF>& wam) {
+	BARRETT_UNITS_TEMPLATE_TYPEDEFS(DOF);
+
+	jp_type zeroMove;
+
+	std::cout << "Press [Enter].\n";
+	waitForEnter();
+	wam.gravityCompensate(true);
+	
+	wam.moveTo(jp_type(0.0));
+
+	jp_type J_arr;
+
+	float theta[10000][4];
+	ifstream file;
+	file.open("exp.txt");
+	
+	for(int i=0;i<10000;++i){
+	for(int j=0;j<4;++j){
+	file>>theta[i][j];}}
+
+	file.close();
+
+	std::string filestr;
+	const char *filename;
+	
+	printf("Please enter file name to log data to: ");
+	std::getline(std::cin,filestr);
+	filename = filestr.c_str();
+	
+	char tmpFile[] = "/tmp/btXXXXXX";
+	if (mkstemp(tmpFile) == -1) {
+		printf("ERROR: Couldn't create temporary file!\n");
+		return 1;
+	}
+
+
+	systems::Ramp time(pm.getExecutionManager(), 1.0);
+
+	systems::TupleGrouper<double, jp_type, jv_type, jt_type, cp_type, Eigen::Quaterniond> tg;
+	connect(time.output, tg.template getInput<0>());
+	connect(wam.jpOutput, tg.template getInput<1>());
+	connect(wam.jvOutput, tg.template getInput<2>());
+	connect(wam.jtSum.output, tg.template getInput<3>());
+	connect(wam.toolPosition.output, tg.template getInput<4>());
+	connect(wam.toolOrientation.output, tg.template getInput<5>());
+
+	typedef boost::tuple<double, jp_type, jv_type, jt_type, cp_type, Eigen::Quaterniond> tuple_type;
+	const size_t PERIOD_MULTIPLIER = 1;
+	systems::PeriodicDataLogger<tuple_type> logger(
+			pm.getExecutionManager(),
+			new log::RealTimeWriter<tuple_type>(tmpFile, PERIOD_MULTIPLIER * pm.getExecutionManager()->getPeriod()),
+			PERIOD_MULTIPLIER);
+
+	time.start();
+	connect(tg.output, logger.input);
+	printf("Logging started.\n");
+
+	for(int k=0;k<10000;++k){
+	{
+	J_arr[0]=theta[k][0];
+	J_arr[1]=theta[k][1];
+	J_arr[2]=theta[k][2];
+	J_arr[3]=theta[k][3];
+	wam.moveTo(J_arr);					}
+	}
+	wam.moveHome();
+
+	// Wait for the user to press Shift-idle
+	pm.getSafetyModule()->waitForMode(SafetyModule::IDLE);
+
+
+	logger.closeLog();
+	printf("Logging stopped.\n");
+
+	log::Reader<tuple_type> lr(tmpFile);
+	lr.exportCSV(filename);
+	printf("Output written to %s.\n", filename);
+	std::remove(tmpFile);
+
+	return 0;
+}
